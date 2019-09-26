@@ -1,0 +1,12 @@
+debug
+release
+TestClient/debug
+TestClient/release
+TestServer/debug
+TestServer/release
+/ipch
+.vs
+/TestClient/TestClient.vcxproj.user
+/TestServer/TestServer.vcxproj.user
+/TestServer.sdf
+/TestServer.v11.suo
