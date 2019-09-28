@@ -37,20 +37,28 @@ DWORD WINAPI workThread(PVOID param)
 		error = connect(m_sock,addr,len);
 	} while (error==SOCKET_ERROR);
 	clientnum++;
+
+	int connect_id = clientnum;
+	int len = 0;
 	pack msg;
 	while(1)
 	{
 		msg.check=0x1234;
 		msg.len=250;
-		msg.id=1;
+		msg.id= connect_id;
 		memset(msg.buf,1,msg.len);
-		send(m_sock,(char*)&msg,sizeof(int)*3+msg.len,0);
+		len =  send(m_sock, (char*)& msg, sizeof(int) * 3 + msg.len, 0);
+		if( len <0 )
+			break;
 		sendPacknum++;
 		memset(&msg,0,sizeof(pack));
-		recv(m_sock,(char*)&msg,sizeof(pack),0);
+		len = recv(m_sock,(char*)&msg,sizeof(pack),0);
+		if( len <= 0 )
+			break;
 		recvpacknum++;
-		Sleep(10);
+		Sleep(1000);
 	}
+	
 
 	return 0;
 }

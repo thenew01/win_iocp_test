@@ -24,7 +24,7 @@ public:
 	UINT		m_iSendSequenceCurrent;
 	IOBufferMap m_sendBuf;
 
-	bool		m_bRedvOrder;
+	bool		m_bRecvOrder;
 	UINT		m_iRecvSequence;
 	UINT		m_iRecvSequenceCurrent;
 	IOBufferMap m_recvBuf;

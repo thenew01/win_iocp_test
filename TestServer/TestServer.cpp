@@ -4,6 +4,9 @@
 #include "stdafx.h"
 
 #include "IOCPSvr.h"
+
+#include "MsgQueue.h"
+using namespace Net;
 #pragma comment(lib,"ws2_32.lib")
 using namespace Net::IOCPServer;
 
@@ -15,16 +18,17 @@ class CServer : public CIOCPSvr
 public:
 	virtual void OnHandleMsg(LPVOID pAddr,BYTE *data,int dataLen)
 	{
-		//printf((const char	*)data);
+		CMsg* pMsg = (CMsg*)(const char*)data;
+		printf("%d\t", pMsg->GetMsgHead().id);
 		//printf("\n");
 		bool b=SendMsg(pAddr,data,dataLen);
 		if (b==false)
 		{
-			exit(
-				1);
+			exit(1);
 		}
-		pack++;
+		pack++;		
 	}
+
 	virtual void OnClientClose(LPVOID pAddr)
 	{
 	//	printf("OnClientClose\n");
@@ -47,7 +51,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	{
 		system("cls");
 		printf("数据包已处理:%d\n",pack);
-		printf("当前连接:%d",svr->GetUserNumber());
+		printf("当前连接:%d\n",svr->GetUserNumber());
 		Sleep(1000);
 	}
 	return 0;

@@ -720,7 +720,7 @@ namespace Net
 						}
 						else if (tMsg->len + sizeof(CMsgHead) > pContext->m_IOArray.Size())
 						{
-							msgErr = true;
+							msgErr = true;  //not enough, exit loop
 							break;
 						}
 						//post msg
@@ -728,7 +728,7 @@ namespace Net
 						//erase
 						pContext->m_IOArray.PopFront((BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));
 						//next msg
-						tMsg = (CMsgHead*)pContext->m_IOArray.GetFirst();
+						tMsg = (CMsgHead*)pContext->m_IOArray.GetFirst(); // process next packet
 						if (!tMsg)
 						{
 							msgErr = true;
