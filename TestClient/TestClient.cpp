@@ -40,8 +40,6 @@ DWORD WINAPI workThread(PVOID param)
 	pack msg;
 	while(1)
 	{
-
-
 		msg.check=0x1234;
 		msg.len=250;
 		msg.id=1;
@@ -51,7 +49,7 @@ DWORD WINAPI workThread(PVOID param)
 		memset(&msg,0,sizeof(pack));
 		recv(m_sock,(char*)&msg,sizeof(pack),0);
 		recvpacknum++;
-		Sleep(2000);
+		Sleep(10);
 	}
 
 	return 0;
@@ -98,7 +96,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		{
 			exit(0);
 		}
-		Sleep(1500);
+		Sleep(1000);
 	}
 	WSACleanup();
 

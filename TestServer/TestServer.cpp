@@ -15,9 +15,8 @@ class CServer : public CIOCPSvr
 public:
 	virtual void OnHandleMsg(LPVOID pAddr,BYTE *data,int dataLen)
 	{
-
-
-	
+		//printf((const char	*)data);
+		//printf("\n");
 		bool b=SendMsg(pAddr,data,dataLen);
 		if (b==false)
 		{
@@ -49,7 +48,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		system("cls");
 		printf("数据包已处理:%d\n",pack);
 		printf("当前连接:%d",svr->GetUserNumber());
-		Sleep(1500);
+		Sleep(1000);
 	}
 	return 0;
 }

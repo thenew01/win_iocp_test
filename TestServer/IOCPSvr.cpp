@@ -380,7 +380,8 @@ namespace Net
 				}
 				else if(lpOverlapped && pContext)
 				{
-					pBuffer = CONTAINING_RECORD(lpOverlapped,CIOBuffer,m_overlapped);
+					pBuffer = CONTAINING_RECORD(lpOverlapped,CIOBuffer,m_overlapped); //data per io, not data per handle
+					//if the buffer is a member of context,so data per handle
 					if (pBuffer)
 					{
 						pThis->ProcessIOMessage(pContext,dwIOSize,pBuffer);
@@ -439,7 +440,7 @@ namespace Net
 				}
 
 				//bind iobuffer
-				CIOBuffer * pBuffer = pThis->AllocateBuffer(itInit);
+				CIOBuffer * pBuffer = pThis->AllocateBuffer(itInit);				
 
 				if (!pBuffer)
 				{
@@ -476,7 +477,25 @@ namespace Net
 
 			if(!pBuffer)
 				return;
-			
+			/*
+			 *无论是发还是收,一旦应用层内存被锁住,这块内存就不能从物理内存分页出去.
+			 *操作系统会限制这些被锁住的内存的数量,一旦达到这个限制,就会返回WSAENOBUFS错误.
+			 *如果应用层在每一个连接上发起大量重叠IO请求,随着连接数的增长,
+			 *很可能就达到这个限制的值.一方面是因为重叠IO操作数量上的增长,
+			 *另一方面是因为当前系统的分页单位是固定的,
+			 *即使应用层只有一个字节的操作请求,操作系统仍然需要付出一页(一般是4K)的代价.
+			 如果服务器希望能处理非常多并发连接,可以在每个连接的读请求时投递一个0字节的读操作,
+			 即在WSARecv的时候为lpBuffers和dwBufferCount分别传递NULL和0参数.
+			 这样做就不会存在内存锁定带来的资源紧张问题,
+			 因为没有内存需要被锁定,一旦有数据被收到,操作系统就会投递完成通知.
+			 这个时候服务端就可以去套接字接受缓冲区取数据了,
+			 有两种方法可以得知到底有多少数据可以读,一种是通过ioctlsocket结合FIONREAD参数去"查询",
+			 另一种就是一直读,直到得到WSAEWOULDBLOCK错误,就表示没有数据可读了.
+			 另一方面在发送数据的时候,仍然可以采用这种方案,原因在于对端的应用可能效率非常低下,
+			 或者陷入了某个死循环,导致对方的网络IO层迟迟不调用recv/WSARecv,受TCP协议本身的限制,
+			 服务端需要发送的数据就会一直PENDING,进而导致内存被内核锁住.采用0字节发送方式后,
+			 应用层先投递一个空的WSASend,表示希望发送数据,操作系统一旦判断这个连接可以写了,
+			 会投递一个完成通知,此时便可以放心投递数据,并且发送缓冲区的大小是可知的,不会存在内存锁定的问题.*/
 			switch (pBuffer->m_ioType)
 			{
 			case itInit:
@@ -517,7 +536,8 @@ namespace Net
 
 			if (!pBuffer)
 			{
-				pBuffer = AllocateBuffer(itReadZero);
+				//pBuffer = AllocateBuffer(itReadZero);
+				pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -525,8 +545,10 @@ namespace Net
 				}
 				//pBuffer->AddRef();
 			}
+			
+			//pBuffer->m_ioType = itReadZero;			
+			pBuffer->m_ioType = itRead;
 
-			pBuffer->m_ioType = itReadZero;
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
 			if (!PostQueuedCompletionStatus(m_hIOCP,0,(DWORD)pContext,&pBuffer->m_overlapped))
@@ -548,6 +570,7 @@ namespace Net
 			if (!pBuffer)
 			{
 				pBuffer = AllocateBuffer(itReadZeroComplete);
+				//pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -557,8 +580,10 @@ namespace Net
 			}
 
 			pBuffer->m_ioType = itReadZeroComplete;
+			//pBuffer->m_ioType = itRead;
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 			pBuffer->SetupReadZero();
+			//pBuffer->SetupRead();
 
 			BOOL ret = WSARecv(pContext->m_sock,&pBuffer->m_wsaBuf,1,&dwIOSize,
 				&dwFlags,&pBuffer->m_overlapped,NULL);
@@ -634,8 +659,11 @@ namespace Net
 				if (SOCKET_ERROR == WSARecv(pContext->m_sock,&pBuffer->m_wsaBuf,1,&dwIOSize,
 					&dwFlags,&pBuffer->m_overlapped,NULL))
 				{
-					ReleaseContext(pContext);
-					ReleaseIOBuffer(pBuffer);
+					if (WSAGetLastError() != WSA_IO_PENDING)
+					{
+						ReleaseContext(pContext);
+						ReleaseIOBuffer(pBuffer);
+					}
 					return;
 				}
 			}
@@ -721,10 +749,13 @@ namespace Net
 			}
 
 			//post zero read
+			OnRead(pContext, 0, NULL);
 
+			/*
 			if (!pBuffer)
 			{
-				pBuffer = AllocateBuffer(itReadZero);
+				//pBuffer = AllocateBuffer(itReadZero);
+				pBuffer = AllocateBuffer(itRead);				
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -732,9 +763,12 @@ namespace Net
 					return;
 				}
 				//pBuffer->AddRef();
+			}			
+			else
+			{
+				//pBuffer->m_ioType = itReadZero;
+				pBuffer->m_ioType = itRead;				
 			}
-
-			pBuffer->m_ioType = itReadZero;
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
 			if (!PostQueuedCompletionStatus(m_hIOCP,0,(DWORD)pContext,&pBuffer->m_overlapped))
@@ -747,7 +781,7 @@ namespace Net
 					ReleaseIOBuffer(pBuffer);
 					return;
 				}
-			}
+			}*/
 		}
 
 		void CIOCPSvr::OnWrite(CClientContext*pContext,DWORD dwSize,CIOBuffer*pBuffer)
@@ -776,23 +810,20 @@ namespace Net
 						ReleaseIOBuffer(pBuffer);
 						pBuffer = NULL;
 						pContext->m_iSendSequenceCurrent = (pContext->m_iSendSequenceCurrent+1)%5001;
-
-						
-
 						ReleaseContext(pContext);
 					}
 					else
 					{
 						int a;
 						a = 1;
-						//initiated and that completion will be indicated at a later time, the buffer should be existed till sending operation finished
+						//initialed and that completion will be indicated at a later time, the buffer should be existed till sending operation finished
 					}
 				}
 				else
 				{
 					pContext->m_iSendSequenceCurrent = (pContext->m_iSendSequenceCurrent+1)%5001;
-					ReleaseIOBuffer(pBuffer);
-					pBuffer = NULL;
+					//ReleaseIOBuffer(pBuffer);
+					//pBuffer = NULL;
 					if (m_bSendOrder && IsSvrRunning())
 					{
 						//...
@@ -930,7 +961,7 @@ namespace Net
 				return false;
 			}
 			pBuffer->m_ioType=itWrite;
-			pBuffer->m_nUsed=dataLen;
+			pBuffer->m_nUsed=dataLen;			
 			memcpy(pBuffer->m_data,data,dataLen);
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 			if (!PostQueuedCompletionStatus(m_hIOCP,pBuffer->m_nUsed,(DWORD)pClien,&pBuffer->m_overlapped))
