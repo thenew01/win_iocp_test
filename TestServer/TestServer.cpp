@@ -18,8 +18,8 @@ class CServer : public CIOCPSvr
 public:
 	virtual void OnHandleMsg(LPVOID pAddr,BYTE *data,int dataLen)
 	{
-		CMsg* pMsg = (CMsg*)(const char*)data;
-		printf("%d\t", pMsg->GetMsgHead().id);
+		//CMsg* pMsg = (CMsg*)(const char*)data;
+		//printf("%d\t", pMsg->GetMsgHead().id);
 		//printf("\n");
 		bool b=SendMsg(pAddr,data,dataLen);
 		if (b==false)

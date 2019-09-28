@@ -47,7 +47,7 @@ DWORD WINAPI workThread(PVOID param)
 		msg.len=250;
 		msg.id= connect_id;
 		memset(msg.buf,1,msg.len);
-		len =  send(m_sock, (char*)& msg, sizeof(int) * 3 + msg.len, 0);
+		len = send(m_sock, (char*)& msg, sizeof(int) * 3 + msg.len, 0);
 		if( len <0 )
 			break;
 		sendPacknum++;
@@ -56,7 +56,7 @@ DWORD WINAPI workThread(PVOID param)
 		if( len <= 0 )
 			break;
 		recvpacknum++;
-		Sleep(1000);
+		Sleep(10);
 	}
 	
 
@@ -80,7 +80,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	GetPrivateProfileString("config", "ip", "127.0.0.1", chIP, 250, CONFIG_FILE);
 	nPort = GetPrivateProfileInt("config", "Port", 6001, CONFIG_FILE);
-	dwThreadNum = GetPrivateProfileInt("config", "ThreadNum", 100, CONFIG_FILE);
+	dwThreadNum = GetPrivateProfileInt("config", "ThreadNum", 1000, CONFIG_FILE);
 	dwPackNum = GetPrivateProfileInt("config", "PackNum", 100000000, CONFIG_FILE);
 	
 	sockaddr_in addr;

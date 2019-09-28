@@ -2,6 +2,8 @@
 #include ".\iocpsvr.h"
 #include <algorithm>
 
+#define NET_BUFFER_SIZE 8192
+
 bool DisableNagle(SOCKET pSock)
 {
 	// 禁用Nagle算法
@@ -11,12 +13,12 @@ bool DisableNagle(SOCKET pSock)
 		return false;
 	}
 	// 设置缓冲区
-	int nBufferSize = 0;//NET_BUFFER_SIZE;
+	int nBufferSize = NET_BUFFER_SIZE;
 	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_SNDBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
 	{
 		return false;
 	}
-	nBufferSize = 0;//NET_BUFFER_SIZE;
+	nBufferSize = NET_BUFFER_SIZE;
 	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_RCVBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
 	{
 		return false;
@@ -338,7 +340,7 @@ namespace Net
 				BOOL bRet = GetQueuedCompletionStatus(
 					hIOCP,
 					&dwIOSize,
-					(LPDWORD)&pContext,
+					(PULONG_PTR)&pContext,
 					&lpOverlapped,
 					INFINITE);
 
@@ -478,24 +480,58 @@ namespace Net
 			if(!pBuffer)
 				return;
 			/*
-			 *无论是发还是收,一旦应用层内存被锁住,这块内存就不能从物理内存分页出去.
-			 *操作系统会限制这些被锁住的内存的数量,一旦达到这个限制,就会返回WSAENOBUFS错误.
-			 *如果应用层在每一个连接上发起大量重叠IO请求,随着连接数的增长,
-			 *很可能就达到这个限制的值.一方面是因为重叠IO操作数量上的增长,
-			 *另一方面是因为当前系统的分页单位是固定的,
-			 *即使应用层只有一个字节的操作请求,操作系统仍然需要付出一页(一般是4K)的代价.
+			 无论是发还是收,一旦应用层内存被锁住,这块内存就不能从物理内存分页出去.
+			 操作系统会限制这些被锁住的内存的数量,一旦达到这个限制,就会返回WSAENOBUFS错误.
+			 如果应用层在每一个连接上发起大量重叠IO请求,随着连接数的增长,
+			 很可能就达到这个限制的值.一方面是因为重叠IO操作数量上的增长,
+			 另一方面是因为当前系统的分页单位是固定的,
+			 即使应用层只有一个字节的操作请求,操作系统仍然需要付出一页(一般是4K)的代价.
 			 如果服务器希望能处理非常多并发连接,可以在每个连接的读请求时投递一个0字节的读操作,
 			 即在WSARecv的时候为lpBuffers和dwBufferCount分别传递NULL和0参数.
 			 这样做就不会存在内存锁定带来的资源紧张问题,
 			 因为没有内存需要被锁定,一旦有数据被收到,操作系统就会投递完成通知.
-			 这个时候服务端就可以去套接字接受缓冲区取数据了,
+			 这个时候服务端就可以去套接字接受缓冲区取数据了.
 			 有两种方法可以得知到底有多少数据可以读,一种是通过ioctlsocket结合FIONREAD参数去"查询",
 			 另一种就是一直读,直到得到WSAEWOULDBLOCK错误,就表示没有数据可读了.
 			 另一方面在发送数据的时候,仍然可以采用这种方案,原因在于对端的应用可能效率非常低下,
-			 或者陷入了某个死循环,导致对方的网络IO层迟迟不调用recv/WSARecv,受TCP协议本身的限制,
+			 或者陷入了某个死循环,导致对方的网络IO层迟迟不调用recv/WSARecv.受TCP协议本身的限制,
 			 服务端需要发送的数据就会一直PENDING,进而导致内存被内核锁住.采用0字节发送方式后,
 			 应用层先投递一个空的WSASend,表示希望发送数据,操作系统一旦判断这个连接可以写了,
 			 会投递一个完成通知,此时便可以放心投递数据,并且发送缓冲区的大小是可知的,不会存在内存锁定的问题.*/
+			 /*
+			 OnZeroByteRead(ClientContext *pContext) the workaround
+			 the WSAENOBUFS error problem.
+
+
+			 This Bug was a very difficult one.. When I stress-tested this server code the
+			 server hung after a while. I first thought that this was a memleak problem or
+			 deadlock problem. But after a some hours I found that it is because of the system
+			 WSAENOBUFS error.
+
+			 With every overlapped send or receive operation, it is probable that
+			 the data buffers submitted will be locked. When memory is locked, it
+			 cannot be paged out of physical memory. The operating system imposes
+			 a limit on the amount of memory that may be locked. When this limit
+			 is reached, overlapped operations will fail with the WSAENOBUFS error.
+			 If a server posts many overlapped receives on each connection, this
+			 limit will be reached as the number of connections grow. If a server
+			 anticipates handling a very high number of concurrent clients, the server
+			 can post a single zero byte receive on each connection. Because there is
+			 no buffer associated with the receive operation, no memory needs to be
+			 locked. With this approach, the per-socket receive buffer should be left
+			 intact because once the zero-byte receive operation completes, the server
+			 can simply perform a non-blocking receive to retrieve all the data buffered
+			 in the socket's receive buffer. There is no more data pending when the
+			 non-blocking receive fails with WSAEWOULDBLOCK. This design would be for
+			 servers that require the maximum possible concurrent connections while
+			 sacrificing the data throughput on each connection.
+			 Of course, the more you are aware of how the clients will be interacting
+			 with the server, the better. In the previous example, a non-blocking receive
+			 is performed once the zero-byte receive completes to retrieve the buffered
+			 data. If the server knows that clients send data in bursts, then once the
+			 zero-byte receive completes, it may post one or more overlapped receives
+			 in case the client sends a substantial amount of data
+			 (greater than the per-socket receive buffer that is 8 KB by default). */
 			switch (pBuffer->m_ioType)
 			{
 			case itInit:
@@ -533,11 +569,13 @@ namespace Net
 			}
 
 			OnClientConnect(pContext);
+			//OnRead(pContext, 0, NULL);
+			//return;
 
 			if (!pBuffer)
 			{
-				//pBuffer = AllocateBuffer(itReadZero);
-				pBuffer = AllocateBuffer(itRead);
+				pBuffer = AllocateBuffer(itReadZero);
+				//pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -546,8 +584,8 @@ namespace Net
 				//pBuffer->AddRef();
 			}
 			
-			//pBuffer->m_ioType = itReadZero;			
-			pBuffer->m_ioType = itRead;
+			pBuffer->m_ioType = itReadZero;						
+			//pBuffer->m_ioType = itRead;
 
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
@@ -570,7 +608,6 @@ namespace Net
 			if (!pBuffer)
 			{
 				pBuffer = AllocateBuffer(itReadZeroComplete);
-				//pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -580,10 +617,8 @@ namespace Net
 			}
 
 			pBuffer->m_ioType = itReadZeroComplete;
-			//pBuffer->m_ioType = itRead;
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
-			pBuffer->SetupReadZero();
-			//pBuffer->SetupRead();
+			pBuffer->SetupReadZero();			
 
 			BOOL ret = WSARecv(pContext->m_sock,&pBuffer->m_wsaBuf,1,&dwIOSize,
 				&dwFlags,&pBuffer->m_overlapped,NULL);
@@ -668,10 +703,6 @@ namespace Net
 				}
 			}
 		}
-	   void	  uZip(CClientContext*pContext,BYTE *data,int dataLen)
-	   {
-
-	   }
 		void CIOCPSvr::OnReadComplete(CClientContext*pContext,DWORD dwSize,CIOBuffer*pBuffer)
 		{
 			if (dwSize == 0 || pBuffer == NULL)
@@ -749,13 +780,15 @@ namespace Net
 			}
 
 			//post zero read
-			OnRead(pContext, 0, NULL);
+			//OnReadZero(pContext, 0, NULL);
+			//OnRead(pContext, 0, NULL);
+			//return;
 
-			/*
+			
 			if (!pBuffer)
 			{
-				//pBuffer = AllocateBuffer(itReadZero);
-				pBuffer = AllocateBuffer(itRead);				
+				pBuffer = AllocateBuffer(itReadZero);		
+				//pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
@@ -766,8 +799,8 @@ namespace Net
 			}			
 			else
 			{
-				//pBuffer->m_ioType = itReadZero;
-				pBuffer->m_ioType = itRead;				
+				pBuffer->m_ioType = itReadZero;				
+				//pBuffer->m_ioType = itRead;
 			}
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
@@ -781,7 +814,7 @@ namespace Net
 					ReleaseIOBuffer(pBuffer);
 					return;
 				}
-			}*/
+			}
 		}
 
 		void CIOCPSvr::OnWrite(CClientContext*pContext,DWORD dwSize,CIOBuffer*pBuffer)
@@ -980,6 +1013,11 @@ namespace Net
 		{
 			printf("virtual recv msg %d\n",dataLen);
 		}
+		void	  uZip(CClientContext* pContext, BYTE* data, int dataLen)
+		{
+
+		}
 	}
 }
+
 
