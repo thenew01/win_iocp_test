@@ -31,16 +31,13 @@ namespace Net
 	void CMsgQueue::PushMsg(CMsg msg)
 	{
 		m_msgList.push_back(msg);
-
 		ReleaseSemaphore(m_sema,1,NULL);
 	}
 
 	void CMsgQueue::Destory()
 	{
 		CMsg msg;
-
 		m_msgList.push_back(msg);
-
 		ReleaseSemaphore(m_sema,1,NULL);
 	}
 }

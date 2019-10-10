@@ -1,6 +1,9 @@
 #pragma once
 #include "IOBuffer.h"
-#include "IOArray.h"
+//#include "IOArray.h"
+#include "ucloopbuffer.h"
+using namespace UCODE;
+
 #include <map>
 using namespace std;
 #include "lock.h"
@@ -15,7 +18,8 @@ public:
 	~CClientContext(void);
 public:
 	SOCKET			m_sock;
-	CIOArray<BYTE>	m_IOArray;		//client数据区
+	//CIOArray<BYTE>	m_IOArray;		//client数据区
+	CSDLoopBuffer	m_loopBuffer;
 	CLock			m_lock;			//lock
 
 	//order

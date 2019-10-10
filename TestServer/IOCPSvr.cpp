@@ -187,7 +187,7 @@ namespace Net
 			{
 				AutoLock _lock(&m_ContextLock);
 				pContext->m_sock = INVALID_SOCKET;
-				pContext->m_IOArray.Clear();
+				//pContext->m_IOArray.Clear();				
 				pContext->m_sendBuf.clear();
 				pContext->m_recvBuf.clear();
 				pContext->m_iSendSequence = 0;
@@ -262,7 +262,7 @@ namespace Net
 				pContext->m_iRecvSequence = 0;
 				pContext->m_iSendSequenceCurrent = 0;
 				pContext->m_iRecvSequenceCurrent = 0;
-				pContext->m_IOArray.Clear();
+				//pContext->m_IOArray.Clear();
 				pContext->m_sendBuf.clear();
 				pContext->m_recvBuf.clear();
 			}
@@ -281,6 +281,8 @@ namespace Net
 
 				m_UsedContextMap.insert(ClientContextMap::value_type(sock,pContext));
 				m_iNowOLUser++;
+
+				pContext->m_loopBuffer.Init(IO_BUFFER_LEN);
 			}
 
 			return pContext;
@@ -347,38 +349,21 @@ namespace Net
 				if (!bRet)
 				{
 					DWORD dwIOError = WSAGetLastError();
-					if (dwIOError != WAIT_TIMEOUT)
+					//printf("Worker errcode=%d\n",dwIOError);
+					if (pContext)
 					{
-						//printf("Worker errcode=%d\n",dwIOError);
-						if (pContext)
-						{
-							pThis->ReleaseContext(pContext);
-						}
-						pBuffer = NULL;
-
-						if (lpOverlapped)
-						{
-							pBuffer = CONTAINING_RECORD(lpOverlapped,CIOBuffer,m_overlapped);
-						}
-						if (pBuffer)
-						{
-							pThis->ReleaseIOBuffer(pBuffer);
-						}
-						continue;
-					}
-
-					bError = true;
-
+						pThis->ReleaseContext(pContext);
+					}					
 					if (lpOverlapped)
 					{
-						pBuffer = CONTAINING_RECORD(lpOverlapped,CIOBuffer,m_overlapped);
+						pBuffer = CONTAINING_RECORD(lpOverlapped, CIOBuffer, m_overlapped);
 					}
 					if (pBuffer)
 					{
 						pThis->ReleaseIOBuffer(pBuffer);
 					}
-
 					continue;
+
 				}
 				else if(lpOverlapped && pContext)
 				{
@@ -394,12 +379,8 @@ namespace Net
 				{
 					bError = true;
 					break;
-				}
-
-				//handle
-			
-			}
-				//MessageBox(NULL,"ddd","www",MB_OK);
+				}			
+			}			
 			return 0;
 		}
 
@@ -569,24 +550,18 @@ namespace Net
 			}
 
 			OnClientConnect(pContext);
-			//OnRead(pContext, 0, NULL);
-			//return;
 
 			if (!pBuffer)
 			{
 				pBuffer = AllocateBuffer(itReadZero);
-				//pBuffer = AllocateBuffer(itRead);
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
 					return;
 				}
-				//pBuffer->AddRef();
 			}
 			
 			pBuffer->m_ioType = itReadZero;						
-			//pBuffer->m_ioType = itRead;
-
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
 			if (!PostQueuedCompletionStatus(m_hIOCP,0,(DWORD)pContext,&pBuffer->m_overlapped))
@@ -613,7 +588,6 @@ namespace Net
 					ReleaseContext(pContext);
 					return;
 				}
-				//pBuffer->AddRef();
 			}
 
 			pBuffer->m_ioType = itReadZeroComplete;
@@ -646,14 +620,11 @@ namespace Net
 					ReleaseContext(pContext);
 					return;
 				}
-				//pBuffer->AddRef();
 			}
 
 			pBuffer->m_ioType = itRead;
-			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
-
 			pBuffer->SetupRead();
-
+			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));			
 			if (!PostQueuedCompletionStatus(m_hIOCP,0,(DWORD)pContext,&pBuffer->m_overlapped))
 			{
 				if (WSAGetLastError() != ERROR_IO_PENDING)
@@ -675,32 +646,23 @@ namespace Net
 					ReleaseIOBuffer(pBuffer);
 					ReleaseContext(pContext);
 					return;
-				}
-				//pBuffer->AddRef();
+				}			
 			}
 
 			pBuffer->m_ioType = itReadComplete;
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 			pBuffer->SetupRead();
-
-			if (m_bReadOrder)
+			DWORD dwIOSize = 0;
+			DWORD dwFlags = 0;
+			if (SOCKET_ERROR == WSARecv(pContext->m_sock, &pBuffer->m_wsaBuf, 1, &dwIOSize,
+				&dwFlags, &pBuffer->m_overlapped, NULL))
 			{
-				//...
-			}
-			else
-			{
-				DWORD dwIOSize=0;
-				DWORD dwFlags=0;
-				if (SOCKET_ERROR == WSARecv(pContext->m_sock,&pBuffer->m_wsaBuf,1,&dwIOSize,
-					&dwFlags,&pBuffer->m_overlapped,NULL))
+				if (WSAGetLastError() != WSA_IO_PENDING)
 				{
-					if (WSAGetLastError() != WSA_IO_PENDING)
-					{
-						ReleaseContext(pContext);
-						ReleaseIOBuffer(pBuffer);
-					}
-					return;
+					ReleaseContext(pContext);
+					ReleaseIOBuffer(pBuffer);
 				}
+				return;
 			}
 		}
 		void CIOCPSvr::OnReadComplete(CClientContext*pContext,DWORD dwSize,CIOBuffer*pBuffer)
@@ -712,55 +674,54 @@ namespace Net
 				return;
 			}
 
-			if (m_bReadOrder)
-			{
-				//...
-			}
-
 			bool msgErr = false;
 
 			while (pBuffer)
 			{
-				pBuffer->m_nUsed += dwSize;
-
 				if (!msgErr)
 				{
-					//handle msg
+					pBuffer->m_nUsed += dwSize;
 
-					pContext->m_IOArray.PushBack(pBuffer->m_data,pBuffer->m_nUsed);
+					//handle msg				
+					if (!pContext->m_loopBuffer.PushBack((const char*)pBuffer->m_data, pBuffer->m_nUsed))
+					{
+						//loop buffer not enough, 一定没有取走，error
+						//assert(0);
+						return;
+					}
+					
+					char buffer[sizeof(CMsgHead)+MAX_MSG_LEN];
+					if (!pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead)))
+						return;// not enough a packet header
 
-					CMsgHead *tMsg = (CMsgHead*)pContext->m_IOArray.GetFirst();
-
+					CMsgHead* tMsg = (CMsgHead*)buffer;
 					while (tMsg)
 					{
 						if (tMsg->check!=0x1234)
 						{
-								ReleaseIOBuffer(pBuffer);
-								ReleaseContext(pContext);
-								return;
-						}
-						if (pContext->m_IOArray.Size() < sizeof(CMsgHead))
-						{
-							break;
-						}
-						else if (tMsg->len > MAX_MSG_LEN)
+							ReleaseIOBuffer(pBuffer);
+							ReleaseContext(pContext);
+							return;
+						}					
+					
+						if (tMsg->len > MAX_MSG_LEN)
 						{
 							ReleaseIOBuffer(pBuffer);
 							ReleaseContext(pContext);
 							return;
 						}
-						else if (tMsg->len + sizeof(CMsgHead) > pContext->m_IOArray.Size())
+												
+						if ( !pContext->m_loopBuffer.PopFront(buffer+sizeof(CMsgHead), tMsg->len))
 						{
-							msgErr = true;  //not enough, exit loop
-							break;
+							msgErr = true;
+							break; //not a full packet, exit loop
 						}
+						
 						//post msg
-						OnHandleMsg(pContext,(BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));
-						//erase
-						pContext->m_IOArray.PopFront((BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));
+						OnHandleMsg(pContext,(BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));											
+						
 						//next msg
-						tMsg = (CMsgHead*)pContext->m_IOArray.GetFirst(); // process next packet
-						if (!tMsg)
+						if( !pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead) ) )
 						{
 							msgErr = true;
 							break;
@@ -772,35 +733,21 @@ namespace Net
 
 				ReleaseIOBuffer(pBuffer);
 				pBuffer = NULL;
-
-				if (m_bReadOrder)
-				{
-					//...
-				}
 			}
 
-			//post zero read
-			//OnReadZero(pContext, 0, NULL);
-			//OnRead(pContext, 0, NULL);
-			//return;
-
-			
 			if (!pBuffer)
 			{
-				pBuffer = AllocateBuffer(itReadZero);		
-				//pBuffer = AllocateBuffer(itRead);
+				pBuffer = AllocateBuffer(itReadZero);						
 				if (!pBuffer)
 				{
 					ReleaseContext(pContext);
 					ReleaseIOBuffer(pBuffer);
 					return;
 				}
-				//pBuffer->AddRef();
 			}			
 			else
 			{
 				pBuffer->m_ioType = itReadZero;				
-				//pBuffer->m_ioType = itRead;
 			}
 			memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
 
@@ -844,27 +791,9 @@ namespace Net
 						pBuffer = NULL;
 						pContext->m_iSendSequenceCurrent = (pContext->m_iSendSequenceCurrent+1)%5001;
 						ReleaseContext(pContext);
-					}
-					else
-					{
-						int a;
-						a = 1;
-						//initialed and that completion will be indicated at a later time, the buffer should be existed till sending operation finished
-					}
-				}
-				else
-				{
-					pContext->m_iSendSequenceCurrent = (pContext->m_iSendSequenceCurrent+1)%5001;
-					//ReleaseIOBuffer(pBuffer);
-					//pBuffer = NULL;
-					if (m_bSendOrder && IsSvrRunning())
-					{
-						//...
-					}
-				}
-
+					}					
+				}				
 			}
-			//ReleaseIOBuffer(pBuffer);
 		}
 
 		void CIOCPSvr::OnWriteComplete(CClientContext*pContext,DWORD dwSize,CIOBuffer*pBuffer)
@@ -879,15 +808,11 @@ namespace Net
 				if (dwSize < pBuffer->m_nUsed && dwSize > 0)
 				{
 					//not send finish
-
 					if (pBuffer->Flush(dwSize))
 					{
 						//没有完成吧？不能删buffer
-
 						pBuffer->m_ioType = itWrite;
-						memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
-						
-						//PostSend(pContext,pBuffer);
+						memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));						
 						if (!PostQueuedCompletionStatus(m_hIOCP,pBuffer->m_nUsed,(DWORD)pContext,&pBuffer->m_overlapped))
 						{
 							if (WSAGetLastError() != WSA_IO_PENDING)
@@ -895,12 +820,7 @@ namespace Net
 								ReleaseContext(pContext);
 								ReleaseIOBuffer(pBuffer);
 								return;
-							}
-							else
-							{
-								int a;
-								a = 1;
-							}
+							}							
 						}
 					}
 				}
@@ -911,64 +831,6 @@ namespace Net
 				ReleaseIOBuffer(pBuffer);
 			}
 		}
-
-		//void CIOCPSvr::PostRead(CClientContext*pClient,CIOBuffer*pBuffer)
-		//{
-		//	if (!pClient || pClient->m_sock == INVALID_SOCKET)
-		//	{
-		//		return;
-		//	}
-
-		//	if (!pBuffer)
-		//	{
-		//		pBuffer = AllocateBuffer(itRead);
-		//		if (!pBuffer)
-		//		{
-		//			ReleaseContext(pClient);
-		//			return;
-		//		}
-		//	}
-
-		//	pBuffer->m_ioType = itRead;
-		//	memset(&pBuffer->m_overlapped,0,sizeof(OVERLAPPED));
-
-		//	if (!PostQueuedCompletionStatus(m_hIOCP,0,(DWORD)pClient,&pBuffer->m_overlapped))
-		//	{
-		//		if (WSAGetLastError() != WSA_IO_PENDING)
-		//		{
-		//			ReleaseContext(pClient);
-		//			ReleaseIOBuffer(pBuffer);
-		//			return;
-		//		}
-		//	}
-		//}
-
-		//void CIOCPSvr::PostSend(CClientContext*pClient,CIOBuffer*pBuffer)
-		//{
-		//	if (!pClient || !pBuffer || !IsSvrRunning() || pClient->m_sock == INVALID_SOCKET)
-		//	{
-		//		ReleaseIOBuffer(pBuffer);
-		//		ReleaseContext(pClient);
-		//		return;
-		//	}
-
-		//	if (m_bSendOrder)
-		//	{
-		//		//...
-		//	}
-
-		//	if (!PostQueuedCompletionStatus(m_hIOCP,pBuffer->m_nUsed,(DWORD)pClient,&pBuffer->m_overlapped))
-		//	{
-		//		if (WSAGetLastError() != WSA_IO_PENDING)
-		//		{
-		//			ReleaseIOBuffer(pBuffer);
-		//			ReleaseContext(pClient);
-		//			return;
-		//		}
-		//	}
-
-		//}
-
 		//////////////////////////////////////////////////////////////////////////
 		//virtual Function
 
@@ -1012,7 +874,9 @@ namespace Net
 		void CIOCPSvr::OnHandleMsg(LPVOID pAddr,BYTE *data,int dataLen)
 		{
 			printf("virtual recv msg %d\n",dataLen);
+			//should  push to  recv queue
 		}
+
 		void	  uZip(CClientContext* pContext, BYTE* data, int dataLen)
 		{
 

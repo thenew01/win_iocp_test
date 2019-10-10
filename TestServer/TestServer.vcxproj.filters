@@ -27,9 +27,6 @@
     <ClInclude Include="ClientContext.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="IOArray.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="IOBuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -43,6 +40,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MsgQueue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ucloopbuffer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -63,6 +63,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="MsgQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ucloopbuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

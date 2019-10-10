@@ -7,7 +7,7 @@ template<typename T>
 class CIOArray
 {
 private:
-	vector<T> m_ioArray;
+	vector<T> m_ioArray; //²åÈë£¬×¢¶¨µÍÐ§
 public:
 	void	Clear()
 	{
@@ -45,12 +45,7 @@ public:
 			return;
 		}
 
-		//for (int i=0;i<dataLen;i++)
-		//{
-		//	data[i] = m_ioArray[i];
-		//}
-		memcpy(data,&m_ioArray[0],dataLen);
-
+		//memcpy(data,&m_ioArray[0],dataLen);
 		m_ioArray.erase(m_ioArray.begin(),m_ioArray.begin()+dataLen);
 	}
 
@@ -61,13 +56,7 @@ public:
 			return;
 		}
 
-		//for (int i=0;i<dataLen;i++)
-		//{
-		//	data[i] = m_ioArray[m_ioArray.size() - dataLen + i];
-		//}
-
-		memcpy(data,&m_ioArray[m_ioArray.size() - dataLen],dataLen);
-
+		//memcpy(data,&m_ioArray[m_ioArray.size() - dataLen],dataLen);
 		m_ioArray.erase(m_ioArray.end() - dataLen,m_ioArray.end());
 	}
 public:

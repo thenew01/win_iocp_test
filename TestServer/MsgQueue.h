@@ -5,7 +5,7 @@ using namespace std;
 #include "winsock2.h"
 
 
-#define MAX_MSG_LEN	(1024 * 8)
+#define MAX_MSG_LEN	(1024 * 2)
 
 #pragma pack(1)
 

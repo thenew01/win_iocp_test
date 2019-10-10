@@ -2,9 +2,10 @@
 //
 
 #include "stdafx.h"
+#include <map>
+using namespace std;
 
 #include "IOCPSvr.h"
-
 #include "MsgQueue.h"
 using namespace Net;
 #pragma comment(lib,"ws2_32.lib")
@@ -12,12 +13,16 @@ using namespace Net::IOCPServer;
 
 static int pack = 0;
 
+std::map<char*, char*> gmapMsg;
 
 class CServer : public CIOCPSvr
 {
 public:
 	virtual void OnHandleMsg(LPVOID pAddr,BYTE *data,int dataLen)
 	{
+		CClientContext* pClient = (CClientContext*)pAddr;
+		//gmapMsg.insert( std::pair<char*, char*>((char*)pAddr, (char*)data));
+		//gmapMsg.clear();
 		//CMsg* pMsg = (CMsg*)(const char*)data;
 		//printf("%d\t", pMsg->GetMsgHead().id);
 		//printf("\n");
@@ -27,6 +32,7 @@ public:
 			exit(1);
 		}
 		pack++;		
+		
 	}
 
 	virtual void OnClientClose(LPVOID pAddr)

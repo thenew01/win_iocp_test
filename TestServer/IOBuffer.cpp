@@ -21,12 +21,12 @@ void CIOBuffer::SetupRead()
 	if (m_nUsed==0)
 	{
 		m_wsaBuf.buf = (char*)m_data;
-		m_wsaBuf.len = MAX_MSG_LEN;
+		m_wsaBuf.len = IO_BUFFER_LEN;
 	}
 	else
 	{
 		m_wsaBuf.buf = (char*)m_data + m_nUsed;
-		m_wsaBuf.len = MAX_MSG_LEN - m_nUsed;
+		m_wsaBuf.len = IO_BUFFER_LEN - m_nUsed;
 	}
 }
 
@@ -38,7 +38,7 @@ void CIOBuffer::SetupWrite()
 
 bool	CIOBuffer::Flush(UINT nLen)
 {
-	if (nLen > MAX_MSG_LEN || nLen > m_nUsed)
+	if (nLen > IO_BUFFER_LEN || nLen > m_nUsed)
 	{
 		return false;
 	}
