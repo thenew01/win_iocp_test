@@ -11,9 +11,10 @@
 #pragma  pack(1)
 struct pack 
 {
+	int len;		//total len
+	byte type;
 	int check;
-	int id;	
-	int len;		//only body len
+	int id;		
 	char buf[256];
 };
 #pragma  pack()
@@ -43,20 +44,32 @@ DWORD WINAPI workThread(PVOID param)
 	pack msg;
 	while(1)
 	{
-		msg.check=0x1234;
-		msg.len=250;
+		msg.len = 250;
+		msg.type = 0;
+		//msg.check=0x1234;		
 		msg.id= connect_id;
 		memset(msg.buf,1,msg.len);
-		len = send(m_sock, (char*)& msg, sizeof(int) * 3 + msg.len, 0);
+		len = send(m_sock, (char*)& msg, msg.len+sizeof(msg.len), 0);
 		if( len <0 )
 			break;
 		sendPacknum++;
 		memset(&msg,0,sizeof(pack));
-		len = recv(m_sock,(char*)&msg,sizeof(pack),0);
+		//len = recv(m_sock,(char*)&msg,sizeof(pack),0);
+		len = recv(m_sock, (char*)&msg, sizeof(int)+1/*length+msg type*/, 0);
 		if( len <= 0 )
 			break;
+
+		int length = msg.len;
+		int type = msg.type;
+		if (length > 0)
+		{
+			byte buffer[4096];
+			len = recv(m_sock, (char*)buffer, length, 0);
+			if( len <= 0 )
+				break;
+		}
 		recvpacknum++;
-		Sleep(10);
+		Sleep(20);
 	}
 	
 
@@ -79,8 +92,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 
 	GetPrivateProfileString("config", "ip", "127.0.0.1", chIP, 250, CONFIG_FILE);
-	nPort = GetPrivateProfileInt("config", "Port", 6001, CONFIG_FILE);
-	dwThreadNum = GetPrivateProfileInt("config", "ThreadNum", 1000, CONFIG_FILE);
+	nPort = GetPrivateProfileInt("config", "Port", 5001, CONFIG_FILE);
+	dwThreadNum = GetPrivateProfileInt("config", "ThreadNum", 10, CONFIG_FILE);
 	dwPackNum = GetPrivateProfileInt("config", "PackNum", 100000000, CONFIG_FILE);
 	
 	sockaddr_in addr;

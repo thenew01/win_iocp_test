@@ -3,7 +3,7 @@
 
 #include "iotype.h"
 
-#define IO_BUFFER_LEN 1024 * 8
+#define IO_BUFFER_LEN 1024// * 8
 
 class  CIOBuffer
 {

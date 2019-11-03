@@ -2,38 +2,39 @@
 #include ".\iocpsvr.h"
 #include <algorithm>
 
-#define NET_BUFFER_SIZE 8192
+#define NET_BUFFER_SIZE 4096*4
 
 bool DisableNagle(SOCKET pSock)
 {
-	// 禁用Nagle算法
-	char bNagleValue = 1;
-	if(SOCKET_ERROR == setsockopt(pSock,IPPROTO_TCP,TCP_NODELAY,(char*)&bNagleValue,sizeof(bNagleValue)))
-	{
-		return false;
-	}
-	// 设置缓冲区
-	int nBufferSize = NET_BUFFER_SIZE;
-	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_SNDBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
-	{
-		return false;
-	}
-	nBufferSize = NET_BUFFER_SIZE;
-	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_RCVBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
-	{
-		return false;
-	}
+	//// 禁用Nagle算法
+	//char bNagleValue = 1;
+	////char bNagleValue = 0;
+	//if(SOCKET_ERROR == setsockopt(pSock,IPPROTO_TCP,TCP_NODELAY,(char*)&bNagleValue,sizeof(bNagleValue)))
+	//{
+	//	return false;
+	//}
+	//// 设置缓冲区
+	//int nBufferSize = NET_BUFFER_SIZE;
+	//if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_SNDBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
+	//{
+	//	return false;
+	//}
+	//nBufferSize = NET_BUFFER_SIZE;
+	//if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_RCVBUF,(char*)&nBufferSize,sizeof(nBufferSize)))
+	//{
+	//	return false;
+	//}
 
-	nBufferSize = 0;
-	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&nBufferSize,sizeof(nBufferSize)))
-	{
-		return false;
-	}
+	//nBufferSize = 0;
+	//if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&nBufferSize,sizeof(nBufferSize)))
+	//{
+	//	return false;
+	//}
 
-	if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_SNDTIMEO,(char*)&nBufferSize,sizeof(nBufferSize)))
-	{
-		return false;
-	}
+	//if(SOCKET_ERROR == setsockopt(pSock,SOL_SOCKET,SO_SNDTIMEO,(char*)&nBufferSize,sizeof(nBufferSize)))
+	//{
+	//	return false;
+	//}
 
 	return true;
 }
@@ -682,51 +683,53 @@ namespace Net
 				{
 					pBuffer->m_nUsed += dwSize;
 
-					//handle msg				
-					if (!pContext->m_loopBuffer.PushBack((const char*)pBuffer->m_data, pBuffer->m_nUsed))
-					{
-						//loop buffer not enough, 一定没有取走，error
-						//assert(0);
-						return;
-					}
-					
-					char buffer[sizeof(CMsgHead)+MAX_MSG_LEN];
-					if (!pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead)))
-						return;// not enough a packet header
+					OnHandleMsg(pContext, (BYTE*)pBuffer->m_data, pBuffer->m_nUsed);
 
-					CMsgHead* tMsg = (CMsgHead*)buffer;
-					while (tMsg)
-					{
-						if (tMsg->check!=0x1234)
-						{
-							ReleaseIOBuffer(pBuffer);
-							ReleaseContext(pContext);
-							return;
-						}					
-					
-						if (tMsg->len > MAX_MSG_LEN)
-						{
-							ReleaseIOBuffer(pBuffer);
-							ReleaseContext(pContext);
-							return;
-						}
-												
-						if ( !pContext->m_loopBuffer.PopFront(buffer+sizeof(CMsgHead), tMsg->len))
-						{
-							msgErr = true;
-							break; //not a full packet, exit loop
-						}
-						
-						//post msg
-						OnHandleMsg(pContext,(BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));											
-						
-						//next msg
-						if( !pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead) ) )
-						{
-							msgErr = true;
-							break;
-						}
-					}
+					////handle msg				
+					//if (!pContext->m_loopBuffer.PushBack((const char*)pBuffer->m_data, pBuffer->m_nUsed))
+					//{
+					//	//loop buffer not enough, 一定没有取走，error
+					//	//assert(0);
+					//	return;
+					//}
+					//
+					//char buffer[sizeof(CMsgHead)+MAX_MSG_LEN];
+					//if (!pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead)))
+					//	return;// not enough a packet header
+
+					//CMsgHead* tMsg = (CMsgHead*)buffer;
+					//while (tMsg)
+					//{
+					//	if (tMsg->check!=0x1234)
+					//	{
+					//		ReleaseIOBuffer(pBuffer);
+					//		ReleaseContext(pContext);
+					//		return;
+					//	}					
+					//
+					//	if (tMsg->len > MAX_MSG_LEN)
+					//	{
+					//		ReleaseIOBuffer(pBuffer);
+					//		ReleaseContext(pContext);
+					//		return;
+					//	}
+					//							
+					//	if ( !pContext->m_loopBuffer.PopFront(buffer+sizeof(CMsgHead), tMsg->len))
+					//	{
+					//		msgErr = true;
+					//		break; //not a full packet, exit loop
+					//	}
+					//	
+					//	//post msg
+					//	OnHandleMsg(pContext,(BYTE*)tMsg,tMsg->len + sizeof(CMsgHead));											
+					//	
+					//	//next msg
+					//	if( !pContext->m_loopBuffer.PopFront( buffer, sizeof(CMsgHead) ) )
+					//	{
+					//		msgErr = true;
+					//		break;
+					//	}
+					//}
 				}
 
 				pContext->m_iRecvSequenceCurrent = (pContext->m_iRecvSequenceCurrent+1)%5001;
